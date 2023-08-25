@@ -1,0 +1,41 @@
+import pandas as pd
+import numpy as np
+import vectorbt as vbt
+
+# define general optimization parameter
+low_threshold_rsi_entry_point=5
+high_threshold_rsi_entry_point=40
+low_threshold_rsi_exit_point=60
+high_threshold_rsi_exit_point=90
+heatmap_nbr_intervals = 30 
+metric = "total_return"
+
+# retrive and prepare data
+eth_price = pd.read_csv("./backtesting_data/ETHUSDTM_1H.csv")[["Timestamp", "Close"]]
+eth_price["datetime"] = pd.to_datetime(eth_price["Timestamp"], unit="ms")
+eth_price = eth_price.set_index("datetime")["Close"]
+
+rsi = vbt.RSI.run(eth_price, window=14, short_name="rsi")
+
+# define entry and exit price levels
+entry_points = list(np.linspace(low_threshold_rsi_entry_point, high_threshold_rsi_entry_point, num=heatmap_nbr_intervals))
+exit_points = list(np.linspace(low_threshold_rsi_exit_point, high_threshold_rsi_exit_point, num=heatmap_nbr_intervals))
+
+# define grid containing all possible entry and exit price pairs
+grid = np.array(np.meshgrid(entry_points, exit_points)).T.reshape(-1,2)
+
+# define entry and exit point signals
+entries = rsi.rsi_crossed_below(list(grid[:, [0]]))
+exits = rsi.rsi_crossed_above(list(grid[:, [1]]))
+
+
+# simulate portfolio
+pf = vbt.Portfolio.from_signals(eth_price, entries, exits)
+print(pf.stats())
+
+# optimize chosen metric for all chosen entry and exit price levels
+pf_perf = pf.deep_getattr(metric)
+pf_perf_matrix = pf_perf.vbt.unstack_to_df(index_levels="rsi_crossed_above", column_levels="rsi_crossed_below")
+# compute and display heatmap
+pf_perf_matrix.vbt.heatmap(xaxis_title="entry", yaxis_title="exit").show()
+
